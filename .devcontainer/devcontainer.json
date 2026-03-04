@@ -1,0 +1,19 @@
+{
+    "name": "C++",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "mounts": [
+        "source=vscode-server-cache,target=/root/.vscode-server,type=volume"
+    ],
+    "extensions": [
+        "ms-vscode.cpptools",
+        "vscode.cpptools-extension-pack",
+        "ms-vscode.cmake-tools",
+        "llvm-vs-code-extensions.vscode-clangd"
+    ],
+    "settings": {
+        "terminal.integrated.shell.linux": "/bin/bash"
+    }
+}

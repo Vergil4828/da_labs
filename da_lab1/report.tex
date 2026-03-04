@@ -1,0 +1,262 @@
+\documentclass[unicode, 12pt, a4paper,oneside,fleqn]{article}
+
+\usepackage{../src/styles}
+\begin{document}
+
+\begin{titlepage}
+\begin{center}
+\bfseries
+
+{\Large Московский авиационный институт\\ (национальный исследовательский университет)
+
+}
+
+\vspace{48pt}
+
+{\large Факультет информационных технологий и прикладной математики
+}
+
+\vspace{36pt}
+
+{\large Кафедра вычислительной математики и~программирования
+
+}
+
+
+\vspace{48pt}
+
+Лабораторная работа \textnumero 1 по курсу \enquote{Дискретный анализ}
+
+\end{center}
+
+\vspace{72pt}
+
+\begin{flushright}
+\begin{tabular}{rl}
+Студент: & И.\,А. Казаков \\
+Преподаватель: & А.\,А. Кухтичев \\
+Группа: & М8О-206БВ-24 \\
+Дата: & \\
+Оценка: & \\
+Подпись: & \\
+\end{tabular}
+\end{flushright}
+
+\vfill
+
+\begin{center}
+\bfseries
+Москва, \the\year
+\end{center}
+\end{titlepage}
+
+\pagebreak
+
+\CWHeader{Лабораторная работа \textnumero 1}
+
+\CWProblem{
+Требуется разработать программу, осуществляющую ввод пар \enquote{ключ-значение}, их 
+упорядочивание по возрастанию ключа указанным алгоритмом сортировки за линейное время и вывод отсортированной последовательности.
+
+{\bfseries Вариант сортировки:} Карманная сортировка.
+
+{\bfseries Вариант ключа:} { \normalfont\ttfamily Вещественные числа в диапазоне $[-100, 100]$. }
+
+{\bfseries Вариант значения:} { \normalfont\ttfamily Строки переменной длины до 2048 символов.}
+}
+\pagebreak
+
+\section{Описание}
+Требуется написать реализацию алгоритма карманной сортировки.
+
+Как сказано в \cite{Kormen}: \enquote{идея, лежащая в основе карманной сортировки, заключается в том, чтобы разбить интервал на n одинаковых интервалов, а затем
+распределить по этим карманам n входных величин $x$}.
+
+\pagebreak
+
+\section{Исходный код}
+На каждой непустой строке входного файла располагается пара \enquote{ключ-значение}, поэтому создадим новый 
+класс \texttt{TPair}, в которой будем хранить вещественный ключ и значение, структуру \texttt{TNode} будем 
+использовать для хранения связного списка внутри кармана. В начале работы все элементы записываются в массив, 
+после создается массив карманов, количество которых равно количеству элементов. Каждый ключ распределяется 
+в соответствующий карман по индексу, внутри каждого кармана ключи сортируются сортировкой вставкой.
+
+\begin{lstlisting}[language=C++]
+#include <chrono>
+#include <iomanip>
+#include <iostream>
+#include <string>
+
+const double MIN_KEY = -100.0;
+const double MAX_KEY = 100.0;
+const double RANGE = MAX_KEY - MIN_KEY;
+
+class TPair {
+   public:
+    double key;
+    std::string value;
+
+    TPair() : key(0.0), value("") {}
+
+    void Print() {
+        std::cout << std::fixed << std::setprecision(6) << key << '\t' << value << "\n";
+    }
+};
+
+struct TNode {
+    TPair data;
+    TNode* next;
+};
+
+void InsertionSort(TNode*& head, TPair item) {
+    TNode* newNode = new TNode;
+    newNode->data = item;
+
+    if (!head || head->data.key > item.key) {
+        newNode->next = head;
+        head = newNode;
+    } else {
+        TNode* curr = head;
+        while (curr->next && curr->next->data.key <= item.key) {
+            curr = curr->next;
+        }
+        newNode->next = curr->next;
+        curr->next = newNode;
+    }
+}
+
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+
+    TPair* raw = nullptr;
+    int startSize = 10;
+    int realSize = 0;
+    raw = new TPair[startSize];
+
+    double inputKey;
+    std::string inputValue;
+
+    while (std::cin >> inputKey) {
+        std::cin.ignore(1, '\t');
+        if (!std::getline(std::cin, inputValue)) {
+            break;
+        }
+
+        if (realSize >= startSize) {
+            startSize *= 2;
+            TPair* temp = new TPair[startSize];
+            for (int i = 0; i < realSize; ++i) temp[i] = raw[i];
+            delete[] raw;
+            raw = temp;
+        }
+        raw[realSize].key = inputKey;
+        raw[realSize].value = inputValue;
+        realSize++;
+    }
+
+    if (realSize == 0) {
+        delete[] raw;
+        return 0;
+    }
+
+    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+
+    TNode** buckets = new TNode*[realSize];
+    for (int i = 0; i < realSize; ++i) {
+        buckets[i] = nullptr;
+    }
+    for (int i = 0; i < realSize; ++i) {
+        int idx = (int)((raw[i].key - MIN_KEY) / RANGE * (realSize - 1));
+        if (idx < 0) {
+            idx = 0;
+        }
+        if (idx >= realSize) {
+            idx = realSize - 1;
+        }
+        InsertionSort(buckets[idx], raw[i]);
+    }
+
+    std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> time = end - start;
+    std::cerr << "Sorting time: " << std::fixed << std::setprecision(3) << time.count() << " ms" << std::endl;
+
+    for (int i = 0; i < realSize; ++i) {
+        TNode* curr = buckets[i];
+        while (curr) {
+            curr->data.Print();
+            TNode* deleteCurr = curr;
+            curr = curr->next;
+            delete deleteCurr;
+        }
+    }
+
+    delete[] buckets;
+    delete[] raw;
+
+    return 0;
+}
+\end{lstlisting}
+
+\pagebreak
+
+\section{Консоль}
+\begin{alltt}
+$ g++ -O3 main.cpp -o main
+$ python3 test_gen.py 10000
+$ ./main < test.txt > out.txt
+Sorting time: 16.202 ms
+
+$ python3 test_gen.py 20000
+$ ./main < test.txt > out.txt
+Sorting time: 31.633 ms
+
+$ python3 test_gen.py 30000
+$ ./main < test.txt > out.txt
+Sorting time: 49.188 ms
+
+$ python3 test_gen.py 40000
+$ ./main < test.txt > out.txt
+Sorting time: 65.559 ms
+
+$ python3 test_gen.py 50000
+$ ./main < test.txt > out.txt
+Sorting time: 90.419 ms
+\end{alltt}
+\pagebreak
+
+\section{Тест производительности}
+
+Тест производительности представляет собой измерение времени работы реализованного алгоритма карманной сортировки на наборах данных различного объема: от 10,000 до 50,000 пар \enquote{ключ-значение}. 
+Для каждого теста генерировались вещественные ключи в диапазоне $[-100, 100]$, распределенные равномерно.
+Ниже представлен график зависимости времени выполнения программы, на котором видно, что программа работает за линейное время, что соответствует теоретической оценке алгоритма карманной сортировки.
+
+\begin{tikzpicture}
+    \begin{axis}[
+        xlabel={Количество элементов},
+        ylabel={Время (мс)},
+        grid=major,
+        width=10cm,
+        height=6cm
+    ]
+    \addplot coordinates {
+        (10000, 16.202)
+        (20000, 31.633)
+        (30000, 49.188)
+        (40000, 65.559)
+        (50000, 90.419)
+    };
+    \end{axis}
+\end{tikzpicture}
+
+\pagebreak
+
+\section{Выводы}
+Выполнив первую лабораторную работу по курсу \enquote{Дискретный анализ}, я изучил алгоритм карманной сортировки и его реализацию на языке C++. 
+В процессе выполнения работы я на практике убедился, что если задано равномерное распределение входных ключей, данный алгоритм демонстрирует линейную сложность $O(n)$.
+
+\pagebreak
+
+\input{../src/literature}
+
+\end{document}
