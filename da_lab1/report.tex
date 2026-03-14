@@ -75,13 +75,13 @@
 \pagebreak
 
 \section{Исходный код}
-На каждой непустой строке входного файла располагается пара \enquote{ключ-значение}, поэтому создадим новый 
-класс \texttt{TPair}, в которой будем хранить вещественный ключ и значение, структуру \texttt{TNode} будем 
-использовать для хранения связного списка внутри кармана. В начале работы все элементы записываются в массив, 
-после создается массив карманов, количество которых равно количеству элементов. Каждый ключ распределяется 
-в соответствующий карман по индексу, внутри каждого кармана ключи сортируются сортировкой вставкой.
+На каждой непустой строке входного файла располагается пара \enquote{ключ-значение}, поэтому создадим  
+класс \texttt{TPair}, в которой будем хранить вещественный ключ и значение. В начале работы все элементы 
+считываются в динамический массив, после чего выполняется подсчет количества элементов для каждого кармана 
+и вычисление их индекса в итоговом массиве. Затем данные распределяются по карманам и сортируются через сортировку вставкой.
 
 \begin{lstlisting}[language=C++]
+#include <algorithm>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -98,30 +98,20 @@ class TPair {
 
     TPair() : key(0.0), value("") {}
 
-    void Print() {
+    void Print() const {
         std::cout << std::fixed << std::setprecision(6) << key << '\t' << value << "\n";
     }
 };
 
-struct TNode {
-    TPair data;
-    TNode* next;
-};
-
-void InsertionSort(TNode*& head, TPair item) {
-    TNode* newNode = new TNode;
-    newNode->data = item;
-
-    if (!head || head->data.key > item.key) {
-        newNode->next = head;
-        head = newNode;
-    } else {
-        TNode* curr = head;
-        while (curr->next && curr->next->data.key <= item.key) {
-            curr = curr->next;
+void ArrayInsertionSort(TPair* arr, int n) {
+    for (int i = 1; i < n; ++i) {
+        TPair key = std::move(arr[i]);
+        int j = i - 1;
+        while (j >= 0 && arr[j].key > key.key) {
+            arr[j + 1] = std::move(arr[j]);
+            j--;
         }
-        newNode->next = curr->next;
-        curr->next = newNode;
+        arr[j + 1] = std::move(key);
     }
 }
 
@@ -129,10 +119,9 @@ int main() {
     std::ios_base::sync_with_stdio(false);
     std::cin.tie(nullptr);
 
-    TPair* raw = nullptr;
-    int startSize = 10;
+    int startSize = 1024;
     int realSize = 0;
-    raw = new TPair[startSize];
+    TPair* raw = new TPair[startSize];
 
     double inputKey;
     std::string inputValue;
@@ -146,12 +135,14 @@ int main() {
         if (realSize >= startSize) {
             startSize *= 2;
             TPair* temp = new TPair[startSize];
-            for (int i = 0; i < realSize; ++i) temp[i] = raw[i];
+            for (int i = 0; i < realSize; ++i) {
+                temp[i] = std::move(raw[i]);
+            }
             delete[] raw;
             raw = temp;
         }
         raw[realSize].key = inputKey;
-        raw[realSize].value = inputValue;
+        raw[realSize].value = std::move(inputValue);
         realSize++;
     }
 
@@ -160,39 +151,90 @@ int main() {
         return 0;
     }
 
-    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-
-    TNode** buckets = new TNode*[realSize];
+    TPair* stlCopy = new TPair[realSize];
     for (int i = 0; i < realSize; ++i) {
-        buckets[i] = nullptr;
+        stlCopy[i] = raw[i];
     }
+
+    std::chrono::high_resolution_clock::time_point startBucket = std::chrono::high_resolution_clock::now();
+
+    int bucketCount = realSize;
+    int* counts = new int[bucketCount]();
+
     for (int i = 0; i < realSize; ++i) {
-        int idx = (int)((raw[i].key - MIN_KEY) / RANGE * (realSize - 1));
+        int idx = (int)((raw[i].key - MIN_KEY) / RANGE * (bucketCount - 1));
         if (idx < 0) {
             idx = 0;
         }
-        if (idx >= realSize) {
-            idx = realSize - 1;
+        if (idx >= bucketCount) {
+            idx = bucketCount - 1;
         }
-        InsertionSort(buckets[idx], raw[i]);
+        counts[idx]++;
     }
 
-    std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> time = end - start;
-    std::cerr << "Sorting time: " << std::fixed << std::setprecision(3) << time.count() << " ms" << std::endl;
+    int* offsets = new int[bucketCount];
+    offsets[0] = 0;
+    for (int i = 1; i < bucketCount; ++i) {
+        offsets[i] = offsets[i - 1] + counts[i - 1];
+    }
+
+    TPair* sorted = new TPair[realSize];
+    int* currentOffset = new int[bucketCount];
+    for (int i = 0; i < bucketCount; ++i) {
+        currentOffset[i] = offsets[i];
+    }
 
     for (int i = 0; i < realSize; ++i) {
-        TNode* curr = buckets[i];
-        while (curr) {
-            curr->data.Print();
-            TNode* deleteCurr = curr;
-            curr = curr->next;
-            delete deleteCurr;
+        int idx = (int)((raw[i].key - MIN_KEY) / RANGE * (bucketCount - 1));
+        if (idx < 0) {
+            idx = 0;
+        }
+        if (idx >= bucketCount) {
+            idx = bucketCount - 1;
+        }
+        sorted[currentOffset[idx]++] = std::move(raw[i]);
+    }
+
+    for (int i = 0; i < bucketCount; ++i) {
+        if (counts[i] > 1) {
+            ArrayInsertionSort(sorted + offsets[i], counts[i]);
         }
     }
 
-    delete[] buckets;
+    std::chrono::high_resolution_clock::time_point endBucket = std::chrono::high_resolution_clock::now();
+
+    std::chrono::high_resolution_clock::time_point startStl = std::chrono::high_resolution_clock::now();
+    std::stable_sort(stlCopy, stlCopy + realSize, [](const TPair& a, const TPair& b) {
+        return a.key < b.key;
+    });
+    std::chrono::high_resolution_clock::time_point endStl = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double, std::milli> bucketTime = endBucket - startBucket;
+    std::chrono::duration<double, std::milli> stlTime = endStl - startStl;
+
+    bool match = true;
+    for (int i = 0; i < realSize; ++i) {
+        if (sorted[i].key != stlCopy[i].key || sorted[i].value != stlCopy[i].value) {
+            match = false;
+            break;
+        }
+    }
+    std::cerr << "Sort Match: " << (match ? "OK" : "ERROR") << "\n";
+
+    std::cerr << std::fixed << std::setprecision(3);
+    std::cerr << "Bucket Sort: " << bucketTime.count() << " ms\n";
+    std::cerr << "STL Stable Sort: " << stlTime.count() << " ms\n";
+
+    for (int i = 0; i < realSize; ++i) {
+        sorted[i].Print();
+    }
+
+    delete[] counts;
+    delete[] offsets;
+    delete[] currentOffset;
+    delete[] sorted;
     delete[] raw;
+    delete[] stlCopy;
 
     return 0;
 }
@@ -202,52 +244,72 @@ int main() {
 
 \section{Консоль}
 \begin{alltt}
-$ g++ -O3 main.cpp -o main
-$ python3 test_gen.py 10000
-$ ./main < test.txt > out.txt
-Sorting time: 16.202 ms
-
-$ python3 test_gen.py 20000
-$ ./main < test.txt > out.txt
-Sorting time: 31.633 ms
-
-$ python3 test_gen.py 30000
-$ ./main < test.txt > out.txt
-Sorting time: 49.188 ms
-
-$ python3 test_gen.py 40000
-$ ./main < test.txt > out.txt
-Sorting time: 65.559 ms
-
-$ python3 test_gen.py 50000
-$ ./main < test.txt > out.txt
-Sorting time: 90.419 ms
+root@5703d59f664e:/workspaces/c_labs/da_lab1# g++ -O3 main.cpp -o main
+root@5703d59f664e:/workspaces/c_labs/da_lab1# python3 test_gen.py 10000  
+root@5703d59f664e:/workspaces/c_labs/da_lab1# ./main < test.txt > result.txt
+Sort Match: OK
+Bucket Sort: 1.011 ms
+STL Stable Sort: 1.832 ms
+root@5703d59f664e:/workspaces/c_labs/da_lab1# python3 test_gen.py 20000  
+root@5703d59f664e:/workspaces/c_labs/da_lab1# ./main < test.txt > result.txt
+Sort Match: OK
+Bucket Sort: 1.957 ms
+STL Stable Sort: 4.039 ms
+root@5703d59f664e:/workspaces/c_labs/da_lab1# python3 test_gen.py 30000 
+root@5703d59f664e:/workspaces/c_labs/da_lab1# ./main < test.txt > result.txt
+Sort Match: OK
+Bucket Sort: 3.117 ms
+STL Stable Sort: 6.678 ms
+root@5703d59f664e:/workspaces/c_labs/da_lab1# python3 test_gen.py 40000 
+root@5703d59f664e:/workspaces/c_labs/da_lab1# ./main < test.txt > result.txt
+Sort Match: OK
+Bucket Sort: 4.127 ms
+STL Stable Sort: 8.762 ms
+root@5703d59f664e:/workspaces/c_labs/da_lab1# python3 test_gen.py 50000
+root@5703d59f664e:/workspaces/c_labs/da_lab1# ./main < test.txt > result.txt
+Sort Match: OK
+Bucket Sort: 6.569 ms
+STL Stable Sort: 12.071 ms
 \end{alltt}
 \pagebreak
 
 \section{Тест производительности}
 
-Тест производительности представляет собой измерение времени работы реализованного алгоритма карманной сортировки на наборах данных различного объема: от 10,000 до 50,000 пар \enquote{ключ-значение}. 
-Для каждого теста генерировались вещественные ключи в диапазоне $[-100, 100]$, распределенные равномерно.
+Тест производительности представляет собой измерение времени работы реализованного алгоритма и 
+его сравнение со стандартным алгоритмом \texttt{std::stable\_sort} на наборах данных объемом от 10000 до 50000 пар \enquote{ключ-значение}. 
+Для каждого теста генерировались случайные вещественные ключи в диапазоне $[-100, 100]$.
 Ниже представлен график зависимости времени выполнения программы, на котором видно, что программа работает за линейное время, что соответствует теоретической оценке алгоритма карманной сортировки.
 
+\begin{center}
 \begin{tikzpicture}
     \begin{axis}[
         xlabel={Количество элементов},
         ylabel={Время (мс)},
         grid=major,
-        width=10cm,
-        height=6cm
+        legend pos=north west,
+        width=12cm,
+        height=7cm
     ]
-    \addplot coordinates {
-        (10000, 16.202)
-        (20000, 31.633)
-        (30000, 49.188)
-        (40000, 65.559)
-        (50000, 90.419)
+    \addplot[color=blue, mark=square*] coordinates {
+        (10000, 1.011)
+        (20000, 1.957)
+        (30000, 3.117)
+        (40000, 4.127)
+        (50000, 6.569)
     };
+    \addlegendentry{Bucket Sort}
+
+    \addplot[color=red, mark=x] coordinates {
+        (10000, 1.832)
+        (20000, 4.039)
+        (30000, 6.678)
+        (40000, 8.762)
+        (50000, 12.071)
+    };
+    \addlegendentry{STL Stable Sort}
     \end{axis}
 \end{tikzpicture}
+\end{center}
 
 \pagebreak
 

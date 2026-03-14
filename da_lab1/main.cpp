@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -14,30 +15,20 @@ class TPair {
 
     TPair() : key(0.0), value("") {}
 
-    void Print() {
+    void Print() const {
         std::cout << std::fixed << std::setprecision(6) << key << '\t' << value << "\n";
     }
 };
 
-struct TNode {
-    TPair data;
-    TNode* next;
-};
-
-void InsertionSort(TNode*& head, TPair item) {
-    TNode* newNode = new TNode;
-    newNode->data = item;
-
-    if (!head || head->data.key > item.key) {
-        newNode->next = head;
-        head = newNode;
-    } else {
-        TNode* curr = head;
-        while (curr->next && curr->next->data.key <= item.key) {
-            curr = curr->next;
+void ArrayInsertionSort(TPair* arr, int n) {
+    for (int i = 1; i < n; ++i) {
+        TPair key = std::move(arr[i]);
+        int j = i - 1;
+        while (j >= 0 && arr[j].key > key.key) {
+            arr[j + 1] = std::move(arr[j]);
+            j--;
         }
-        newNode->next = curr->next;
-        curr->next = newNode;
+        arr[j + 1] = std::move(key);
     }
 }
 
@@ -45,10 +36,9 @@ int main() {
     std::ios_base::sync_with_stdio(false);
     std::cin.tie(nullptr);
 
-    TPair* raw = nullptr;
-    int startSize = 10;
+    int startSize = 1024;
     int realSize = 0;
-    raw = new TPair[startSize];
+    TPair* raw = new TPair[startSize];
 
     double inputKey;
     std::string inputValue;
@@ -62,12 +52,14 @@ int main() {
         if (realSize >= startSize) {
             startSize *= 2;
             TPair* temp = new TPair[startSize];
-            for (int i = 0; i < realSize; ++i) temp[i] = raw[i];
+            for (int i = 0; i < realSize; ++i) {
+                temp[i] = std::move(raw[i]);
+            }
             delete[] raw;
             raw = temp;
         }
         raw[realSize].key = inputKey;
-        raw[realSize].value = inputValue;
+        raw[realSize].value = std::move(inputValue);
         realSize++;
     }
 
@@ -76,39 +68,90 @@ int main() {
         return 0;
     }
 
-    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-
-    TNode** buckets = new TNode*[realSize];
+    TPair* stlCopy = new TPair[realSize];
     for (int i = 0; i < realSize; ++i) {
-        buckets[i] = nullptr;
+        stlCopy[i] = raw[i];
     }
+
+    std::chrono::high_resolution_clock::time_point startBucket = std::chrono::high_resolution_clock::now();
+
+    int bucketCount = realSize;
+    int* counts = new int[bucketCount]();
+
     for (int i = 0; i < realSize; ++i) {
-        int idx = (int)((raw[i].key - MIN_KEY) / RANGE * (realSize - 1));
+        int idx = (int)((raw[i].key - MIN_KEY) / RANGE * (bucketCount - 1));
         if (idx < 0) {
             idx = 0;
         }
-        if (idx >= realSize) {
-            idx = realSize - 1;
+        if (idx >= bucketCount) {
+            idx = bucketCount - 1;
         }
-        InsertionSort(buckets[idx], raw[i]);
+        counts[idx]++;
     }
 
-    std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> time = end - start;
-    std::cerr << "Sorting time: " << std::fixed << std::setprecision(3) << time.count() << " ms" << std::endl;
+    int* offsets = new int[bucketCount];
+    offsets[0] = 0;
+    for (int i = 1; i < bucketCount; ++i) {
+        offsets[i] = offsets[i - 1] + counts[i - 1];
+    }
+
+    TPair* sorted = new TPair[realSize];
+    int* currentOffset = new int[bucketCount];
+    for (int i = 0; i < bucketCount; ++i) {
+        currentOffset[i] = offsets[i];
+    }
 
     for (int i = 0; i < realSize; ++i) {
-        TNode* curr = buckets[i];
-        while (curr) {
-            curr->data.Print();
-            TNode* deleteCurr = curr;
-            curr = curr->next;
-            delete deleteCurr;
+        int idx = (int)((raw[i].key - MIN_KEY) / RANGE * (bucketCount - 1));
+        if (idx < 0) {
+            idx = 0;
+        }
+        if (idx >= bucketCount) {
+            idx = bucketCount - 1;
+        }
+        sorted[currentOffset[idx]++] = std::move(raw[i]);
+    }
+
+    for (int i = 0; i < bucketCount; ++i) {
+        if (counts[i] > 1) {
+            ArrayInsertionSort(sorted + offsets[i], counts[i]);
         }
     }
 
-    delete[] buckets;
+    std::chrono::high_resolution_clock::time_point endBucket = std::chrono::high_resolution_clock::now();
+
+    std::chrono::high_resolution_clock::time_point startStl = std::chrono::high_resolution_clock::now();
+    std::stable_sort(stlCopy, stlCopy + realSize, [](const TPair& a, const TPair& b) {
+        return a.key < b.key;
+    });
+    std::chrono::high_resolution_clock::time_point endStl = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double, std::milli> bucketTime = endBucket - startBucket;
+    std::chrono::duration<double, std::milli> stlTime = endStl - startStl;
+
+    bool match = true;
+    for (int i = 0; i < realSize; ++i) {
+        if (sorted[i].key != stlCopy[i].key || sorted[i].value != stlCopy[i].value) {
+            match = false;
+            break;
+        }
+    }
+    std::cerr << "Sort Match: " << (match ? "OK" : "ERROR") << "\n";
+
+    std::cerr << std::fixed << std::setprecision(3);
+    std::cerr << "Bucket Sort: " << bucketTime.count() << " ms\n";
+    std::cerr << "STL Stable Sort: " << stlTime.count() << " ms\n";
+
+    for (int i = 0; i < realSize; ++i) {
+        sorted[i].Print();
+    }
+
+    delete[] counts;
+    delete[] offsets;
+    delete[] currentOffset;
+    delete[] sorted;
     delete[] raw;
+    delete[] stlCopy;
 
     return 0;
 }
