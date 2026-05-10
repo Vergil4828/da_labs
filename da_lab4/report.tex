@@ -1,0 +1,305 @@
+\documentclass[unicode, 12pt, a4paper,oneside,fleqn]{article}
+
+\usepackage{../src/styles} % Убедитесь, что путь к стилям верный
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{alltt}
+
+\begin{document}
+
+\begin{titlepage}
+\begin{center}
+\bfseries
+
+{\Large Московский авиационный институт\\ (национальный исследовательский университет)
+}
+
+\vspace{48pt}
+
+{\large Факультет информационных технологий и прикладной математики
+}
+
+\vspace{36pt}
+
+{\large Кафедра вычислительной математики и~программирования
+}
+
+\vspace{48pt}
+
+Лабораторная работа \textnumero 4 по курсу \enquote{Дискретный анализ}
+
+\end{center}
+
+\vspace{72pt}
+
+\begin{flushright}
+\begin{tabular}{rl}
+Студент: & И.\,А. Казаков \\
+Преподаватель: & А.\,А. Кухтичев \\
+Группа: & М8О-206БВ-24 \\
+Дата: & \\
+Оценка: & \\
+Подпись: & \\
+\end{tabular}
+\end{flushright}
+
+\vfill
+
+\begin{center}
+\bfseries
+Москва, \the\year
+\end{center}
+\end{titlepage}
+
+\pagebreak
+
+\CWHeader{Лабораторная работа \textnumero 4}
+
+\CWProblem{
+    Необходимо реализовать один из стандартных алгоритмов поиска образцов для указанного алфавита.
+    
+    \textbf{Вариант алгоритма:} Поиск одного образца, основанный на построении Z-блоков.
+    
+    \textbf{Вариант алфавита:} Слова не более 16 знаков латинского алфавита (регистронезависимые).
+    
+    Программа должна считывать искомый образец с первой строки, а затем обрабатывать текст, состоящий из слов и чисел, выводя координаты всех вхождений (номер строки и номер слова в строке).
+}
+
+\pagebreak
+
+\section{Описание алгоритма}
+Для решения задачи используется **Z-алгоритм**, адаптированный для работы с последовательностью слов (токенов). 
+
+\subsection{Z-функция}
+Z-функция от массива $S$ — это массив $Z$, где каждый элемент $Z[i]$ равен длине самого длинного общего префикса между массивом $S$ и его суффиксом, начинающимся с позиции $i$. 
+
+Для поиска образца $P$ в тексте $T$ строится объединенный массив:
+\[ S = P + [\$] + T \]
+где $[\$]$ — специальный разделитель, не встречающийся в алфавите. Если для некоторого индекса $i$, относящегося к части текста $T$, значение $Z[i]$ равно длине образца $P$, то в этой позиции найдено вхождение.
+
+\subsection{Особенности реализации}
+\begin{itemize}
+    \item \textbf{Токенизация:} Текст разбивается на отдельные слова с сохранением их координат (номер строки и порядковый номер слова в ней).
+    \item \textbf{Регистронезависимость:} Все слова при сравнении приводятся к нижнему регистру.
+    \item \textbf{Сложность:} Алгоритм работает за линейное время $O(N + M)$, где $N$ — количество слов в тексте, а $M$ — количество слов в образце.
+\end{itemize}
+
+\pagebreak
+
+\section{Исходный код}
+Реализация выполнена на языке C++.
+
+\begin{lstlisting}[language=C++]
+#include <algorithm>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+using namespace std;
+
+struct WordInfo {
+    int line;
+    int pos;
+};
+
+void toLowerCase(string& s) {
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z') {
+            c = (char)(c - 'A' + 'a');
+        }
+    }
+}
+
+vector<int> computeZ(const vector<string>& s) {
+    int n = s.size();
+    vector<int> z(n, 0);
+    int l = 0, r = 0;
+    for (int i = 1; i < n; ++i) {
+        if (i <= r) {
+            z[i] = min(r - i + 1, z[i - l]);
+        }
+        while (i + z[i] < n && s[z[i]] == s[i + z[i]]) {
+            z[i]++;
+        }
+        if (i + z[i] - 1 > r) {
+            l = i;
+            r = i + z[i] - 1;
+        }
+    }
+    return z;
+}
+
+int main() {
+    ios_base::sync_with_stdio(false);
+    cin.tie(NULL);
+
+    string patternLine;
+    if (!getline(cin, patternLine)) {
+        return 0;
+    }
+
+    vector<string> pattern;
+    stringstream ssP(patternLine);
+    string word;
+    while (ssP >> word) {
+        toLowerCase(word);
+        pattern.push_back(word);
+    }
+
+    if (pattern.empty()) {
+        return 0;
+    }
+
+    vector<string> textWords;
+    vector<WordInfo> info;
+    string textLine;
+    int currentLine = 1;
+    while (getline(cin, textLine)) {
+        stringstream ssT(textLine);
+        int currentWordPos = 1;
+        while (ssT >> word) {
+            string lowWord = word;
+            toLowerCase(lowWord);
+            textWords.push_back(lowWord);
+            info.push_back({currentLine, currentWordPos});
+            currentWordPos++;
+        }
+        currentLine++;
+    }
+
+    if (textWords.empty()) {
+        return 0;
+    }
+
+    vector<string> combined;
+    combined.reserve(pattern.size() + textWords.size() + 1);
+    for (const auto& s : pattern) {
+        combined.push_back(s);
+    }
+    combined.push_back("\0");
+    for (const auto& s : textWords) {
+        combined.push_back(s);
+    }
+
+    vector<int> z = computeZ(combined);
+    int m = (int)pattern.size();
+
+    for (int i = 0; i < (int)textWords.size(); ++i) {
+        if (z[i + m + 1] == m) {
+            cout << info[i].line << ", " << info[i].pos << "\n";
+        }
+    }
+
+    return 0;
+}
+
+\end{lstlisting}
+
+\pagebreak
+
+\section{Исследование производительности}
+
+Для анализа эффективности Z-алгоритма было проведено сравнение с наивным алгоритмом поиска (Naive Search). Исследование разделено на два сценария:
+
+\begin{enumerate}
+    \item \textbf{Normal Case:} Паттерн длиной 3 слова. Текст состоит из случайных строк. В этом случае наивный поиск работает быстро, так как несовпадение обнаруживается на первом же символе большинства слов.
+    \item \textbf{Worst Case:} Паттерн длиной 100 слов (99 слов \enquote{a} и 1 слово \enquote{b}). Текст заполнен словами \enquote{a}. Здесь наивный поиск вынужден совершать $M-1$ сравнений для каждой позиции текста, что приводит к деградации сложности до $O(N \cdot M)$.
+\end{enumerate}
+
+\subsection{Результаты тестирования (Worst Case)}
+Данные получены при фиксированной длине паттерна ($M=100$) и увеличении объема текста ($N$).
+
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+Кол-во слов в тексте (тыс.) & Z-Algorithm (мс) & Naive Search (мс) \\ \hline
+100 & 3.637 & 52.216 \\ \hline
+200 & 6.954 & 102.203 \\ \hline
+300 & 10.130 & 158.604 \\ \hline
+400 & 13.350 & 202.200 \\ \hline
+500 & 19.036 & 286.085 \\ \hline
+\end{tabular}
+\end{center}
+
+\subsection{График зависимости времени от объема данных}
+
+\begin{center}
+\begin{tikzpicture}
+    \begin{axis}[
+        xlabel={Количество слов (тыс.)},
+        ylabel={Время (мс)},
+        grid=major,
+        legend pos=north west,
+        width=12cm, height=8cm,
+        title={Worst Case: Z-Algorithm vs Naive Search}
+    ]
+    
+    \addplot[color=blue, mark=circle] coordinates {
+        (100, 3.637)
+        (200, 6.954)
+        (300, 10.130)
+        (400, 13.350)
+        (500, 19.036)
+    };
+    \addlegendentry{Z-Algorithm}
+
+    \addplot[color=red, mark=x] coordinates {
+        (100, 52.216)
+        (200, 102.203)
+        (300, 158.604)
+        (400, 202.200)
+        (500, 286.085)
+    };
+    \addlegendentry{Naive Search}
+    \end{axis}
+\end{tikzpicture}
+\end{center}
+
+\pagebreak
+
+\section{Консоль}
+Ниже представлен протокол сборки программы и запуска тестов производительности:
+
+\begin{alltt}
+# Сборка бенчмарка с оптимизацией O3
+root@server:~/da_lab4# g++ -O3 benchmark.cpp -o solution
+
+# Сценарий 1: Случайные данные (Normal Case)
+root@server:~/da_lab4# python3 test_gen_normal.py 500000
+root@server:~/da_lab4# ./solution < input.txt
+Z-Algorithm:    14.999 ms (found 50)
+Naive Search:   2.554 ms (found 50)
+
+# Сценарий 2: Худший случай (Worst Case)
+root@server:~/da_lab4# python3 test_gen.py 100000
+Worst-case test generated: 100000 words, pattern length 100
+root@server:~/da_lab4# ./solution < input.txt
+Z-Algorithm:    3.637 ms (found 2)
+Naive Search:   52.216 ms (found 2)
+
+root@server:~/da_lab4# python3 test_gen.py 500000
+Worst-case test generated: 500000 words, pattern length 100
+root@server:~/da_lab4# ./solution < input.txt
+Z-Algorithm:    19.036 ms (found 10)
+Naive Search:   286.085 ms (found 10)
+\end{alltt}
+
+\section{Анализ результатов}
+На основе полученных данных можно сделать следующие выводы:
+\begin{enumerate}
+    \item \textbf{Затраты на подготовку:} В обычном случае (случайный текст) Z-алгоритм проигрывает наивному поиску. Это связано с накладными расходами на выделение памяти под объединенный вектор \texttt{combined} и копирование строк.
+    \item \textbf{Устойчивость к худшему случаю:} В сценарии с повторяющимися префиксами Z-алгоритм демонстрирует стабильную линейную сложность, в то время как время работы наивного алгоритма растет значительно быстрее из-за многократных вложенных сравнений.
+    \item \textbf{Эффективность:} Z-алгоритм гарантирует время выполнения $O(N+M)$ вне зависимости от содержания текста, что делает его более надежным для обработки структурированных данных.
+\end{enumerate}
+
+\pagebreak
+
+\section{Выводы}
+В ходе выполнения лабораторной работы был реализован алгоритм поиска образца на основе построения Z-блоков. Алгоритм был успешно адаптирован для работы с последовательностями слов латинского алфавита. Тестирование подтвердило теоретическую оценку сложности $O(N + M)$ и показало преимущество метода над наивным поиском в условиях частых частичных совпадений образца с текстом.
+
+\pagebreak
+
+\input{../src/literature}
+
+\end{document}
